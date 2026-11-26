@@ -1,36 +1,64 @@
 import type { JudgeProfile } from "./profile.ts";
 
 export const DEFAULT_BASE = "https://api.typesafe.ai";
-export const ENDPOINT = `${DEFAULT_BASE}/v1/systemone`;
+export const DEFAULT_PATH = "/v1/systemone";
+export const ENDPOINT = `${DEFAULT_BASE}${DEFAULT_PATH}`;
 
 /**
- * The judge endpoint under a `TYPESAFE_BASE` override: unset or blank keeps TypeSafe's own
- * base, trailing slashes are dropped, and `/v1/systemone` is appended as with the default.
- * Anything but a plain https base, or an http base on a loopback host (127.0.0.1, [::1],
- * localhost), with no credentials, query or fragment, is undefined, which callers treat as
- * invalid configuration: no request and no advice, never an affirmative one.
+ * The judge endpoint under `TYPESAFE_BASE` and `TYPESAFE_PATH` overrides: unset or blank
+ * keeps TypeSafe's own base (`https://api.typesafe.ai`) and path (`/v1/systemone`), trailing
+ * slashes on the base are dropped, and a custom path replaces `/v1/systemone`. Anything but
+ * a plain https base, or an http base on a loopback host (127.0.0.1, [::1], localhost), with
+ * no credentials, query or fragment — or a path that does not start with `/` or carries
+ * whitespace, control characters, backslashes, `?`, `#`, or `.` / `..` segments — is
+ * undefined, which callers treat as invalid configuration: no request and no advice, never
+ * an affirmative one.
  */
-export function typesafeEndpoint(base: string | undefined): string | undefined {
+export function typesafeEndpoint(base: string | undefined, path?: string): string | undefined {
   const value = base?.trim() ?? "";
-  if (value === "") return ENDPOINT;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return undefined;
+  let baseUrl = DEFAULT_BASE;
+  if (value !== "") {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return undefined;
+    }
+    if (
+      !(
+        url.protocol === "https:" ||
+        (url.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname))
+      ) ||
+      url.username !== "" ||
+      url.password !== "" ||
+      value.includes("?") ||
+      value.includes("#")
+    )
+      return undefined;
+    baseUrl = `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
   }
+  const rawPath = path?.trim() ?? "";
+  if (rawPath === "") return `${baseUrl}${DEFAULT_PATH}`;
   if (
-    !(
-      url.protocol === "https:" ||
-      (url.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname))
-    ) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    value.includes("?") ||
-    value.includes("#")
+    !rawPath.startsWith("/") ||
+    /[\s\\?#]/.test(rawPath) ||
+    [...rawPath].some((ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 0x20 || code === 0x7f;
+    }) ||
+    rawPath.split("/").some((segment) => segment === "." || segment === "..")
   )
     return undefined;
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}/v1/systemone`;
+  return `${baseUrl}${rawPath}`;
+}
+export function isDecideEndpoint(endpoint = ENDPOINT): boolean {
+  let pathname: string;
+  try {
+    pathname = new URL(endpoint).pathname;
+  } catch {
+    pathname = endpoint.split(/[?#]/, 1)[0] ?? "";
+  }
+  return !pathname.endsWith(DEFAULT_PATH);
 }
 export const MAX_REQUEST_BYTES = 32000;
 /**
@@ -112,7 +140,8 @@ const JUDGE_KIND_CAUSE: Record<JudgeErrorKind, string> = {
   server: "TypeSafe returned a server error",
   response: "TypeSafe's reply was not a usable judgment",
   input: "this checkpoint is too large to send",
-  configuration: "TYPESAFE_BASE is not a valid https URL or loopback http URL",
+  configuration:
+    "TYPESAFE_BASE is not a valid https URL or loopback http URL, or TYPESAFE_PATH is invalid",
 };
 
 export function judgeErrorMessage(kind: JudgeErrorKind): string {
@@ -126,7 +155,7 @@ export function judgeErrorMessage(kind: JudgeErrorKind): string {
     return `${core} Check TypeSafe billing and credits; this is not a temporary glitch.`;
   }
   if (kind === "configuration") {
-    return `${core} Fix or unset TYPESAFE_BASE; this is not a temporary glitch.`;
+    return `${core} Fix or unset TYPESAFE_BASE and TYPESAFE_PATH; this is not a temporary glitch.`;
   }
   if (kind === "input") {
     return `${core} This is a size limit, not a temporary glitch.`;
@@ -181,8 +210,38 @@ function choice(value: unknown, options: string[]): Choice {
     throw new JudgeError("response");
   return { choice: c.choice, confidence: c.confidence, probabilities };
 }
-export function parseJudgment(value: unknown): Judgment {
-  const r = value as {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function normalizeDecideResponse(value: unknown): unknown {
+  if (!isPlainObject(value) || !Array.isArray(value.answers)) throw new JudgeError("response");
+  const answers: Record<string, unknown> = {};
+  for (const item of value.answers) {
+    if (!isPlainObject(item) || typeof item.name !== "string" || Object.hasOwn(answers, item.name))
+      throw new JudgeError("response");
+    if (!Array.isArray(item.probabilities)) throw new JudgeError("response");
+    const probabilities: Record<string, unknown> = {};
+    for (const entry of item.probabilities) {
+      if (
+        !isPlainObject(entry) ||
+        typeof entry.value !== "string" ||
+        Object.hasOwn(probabilities, entry.value)
+      )
+        throw new JudgeError("response");
+      probabilities[entry.value] = entry.probability;
+    }
+    answers[item.name] = {
+      type: item.type,
+      choice: item.choice,
+      confidence: item.confidence,
+      probabilities,
+    };
+  }
+  return { model: value.model, answers, usage: value.usage };
+}
+export function parseJudgment(value: unknown, endpoint = ENDPOINT): Judgment {
+  const normalized = isDecideEndpoint(endpoint) ? normalizeDecideResponse(value) : value;
+  const r = normalized as {
     model?: unknown;
     answers?: Record<string, unknown>;
     usage?: { input_tokens?: unknown; output_tokens?: unknown };
@@ -291,12 +350,28 @@ export function floorFor(usage: number, profile?: JudgeProfile): number {
 export function qualifies(j: Judgment, usage: number, profile?: JudgeProfile): boolean {
   return score(j, profile) >= floorFor(usage, profile);
 }
-export function requestBody(state: unknown, profile?: JudgeProfile): string {
-  const body = JSON.stringify({
-    model: "jev-latest",
-    state,
-    questions: profile?.questions ?? QUESTIONS,
-  });
+export function requestBody(state: unknown, profile?: JudgeProfile, endpoint = ENDPOINT): string {
+  const questions = profile?.questions ?? QUESTIONS;
+  const payload = isDecideEndpoint(endpoint)
+    ? {
+        model: "jev-latest",
+        input: JSON.stringify(state) ?? "null",
+        questions: (["done", "shape"] as const).map((name) => ({
+          type: questions[name].type,
+          name,
+          instructions: questions[name].instructions,
+          choices: Object.entries(questions[name].criteria).map(([value, description]) => ({
+            value,
+            description,
+          })),
+        })),
+      }
+    : {
+        model: "jev-latest",
+        state,
+        questions,
+      };
+  const body = JSON.stringify(payload);
   if (Buffer.byteLength(body) > MAX_REQUEST_BYTES) throw new JudgeError("input");
   return body;
 }
@@ -315,7 +390,7 @@ export async function judge(
       method: "POST",
       redirect: "error",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: requestBody(state, profile),
+      body: requestBody(state, profile, endpoint),
       signal: AbortSignal.any([signal, timeout]),
     });
     if (!response.ok) {
@@ -346,7 +421,7 @@ export async function judge(
       await reader.cancel();
     }
     try {
-      return parseJudgment(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      return parseJudgment(JSON.parse(Buffer.concat(chunks).toString("utf8")), endpoint);
     } catch {
       throw new JudgeError("response");
     }

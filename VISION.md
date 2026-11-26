@@ -74,7 +74,7 @@ A person who cannot accept that boundary is told plainly to uninstall rather tha
 ## Scope
 
 This is not a context manager, not a summarizer, not an agent framework, and not a telemetry product.
-It is not a host: it never installs, patches, or updates the user's Pi, Claude Code, Codex, or Grok.
+It is not a host: it never installs, patches, or updates the user's Pi, Claude Code, Codex, Grok, or Antigravity.
 Real session transcripts, gold labels, and eval output stay local and are never committed or published.
 The repository holds itself to the same bar it asks of the advice: generated files are generated, host versions are pinned, and contributor pull requests come through the review gate.
 These commitments describe what this project ships, and are not defended by runtime machinery that a fork could delete as easily as the commitment itself.

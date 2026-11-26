@@ -67,6 +67,7 @@ Use the same string on each host:
 - Claude Code: set `compact-adviser.profile` in `/config` to the serialized JSON text, without the outer string quotes.
 - Codex: add `profile` to `${CODEX_HOME:-~/.codex}/compact-adviser/settings.json`.
 - Grok: add `profile` to `${GROK_HOME:-~/.grok}/compact-adviser/settings.json`.
+- Antigravity: add `profile` to `${COMPACT_ADVISER_AGY_HOME:-~/.gemini/antigravity-cli/compact-adviser}/settings.json`.
 
 Preserve existing fields, especially saved keys and mode consent.
 If the configuration file does not exist, first use the host's adviser controls to create it.
@@ -79,7 +80,7 @@ A change to the profile during a pending judgment prevents that judgment from pr
 
 ## Default equivalence
 
-All four packages keep the same built-in questions, score, and floor schedule.
+All five packages keep the same built-in questions, score, and floor schedule.
 The profile parser and judge behavior are tested across hosts in
 `packages/pi-extension/test/profile.test.ts`.
 Each host also tests its hook or extension with a stored profile.

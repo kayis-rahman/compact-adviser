@@ -184,11 +184,12 @@ async function testEndpoint($: EngineInterface): Promise<string | undefined> {
   return value !== undefined && LOOPBACK_ENDPOINT.test(value) ? value : undefined;
 }
 
-/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` from the launch environment. */
-async function judgeEndpoint($: EngineInterface): Promise<string> {
-  const endpoint = (await testEndpoint($)) ?? typesafeEndpoint(await $.env.get("TYPESAFE_BASE"));
-  if (endpoint === undefined) throw new JudgeError("configuration");
-  return endpoint;
+/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` and `TYPESAFE_PATH`. */
+async function resolveEndpoint($: EngineInterface): Promise<string | undefined> {
+  return (
+    (await testEndpoint($)) ??
+    typesafeEndpoint(await $.env.get("TYPESAFE_BASE"), await $.env.get("TYPESAFE_PATH"))
+  );
 }
 
 async function loadConfig($: EngineInterface): Promise<Config> {
@@ -443,10 +444,11 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
     if (view.conversationTokens <= 20000) return;
     const fingerprint = await checkpointKey(view.checkpointText);
     if ((await loadState($)).state.lastHintKey === fingerprint) return;
+    const endpoint = await resolveEndpoint($);
     let loggedBody: string | undefined;
     if (initial.logRequests) {
       try {
-        loggedBody = requestBody(view.state, profile);
+        loggedBody = requestBody(view.state, profile, endpoint);
         await appendTypeSafeLog($, requestLogLine(loggedBody));
       } catch {
         // Request logging must not replace or delay the judgment.
@@ -454,7 +456,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
     }
     let result: Awaited<ReturnType<typeof judge>>;
     try {
-      const endpoint = await judgeEndpoint($);
+      if (endpoint === undefined) throw new JudgeError("configuration");
       result = await judge(
         view.state,
         await apiKey($),
@@ -489,7 +491,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
         await appendTypeSafeLog(
           $,
           responseLogLine(
-            loggedBody ?? requestBody(view.state, profile),
+            loggedBody ?? requestBody(view.state, profile, endpoint),
             result,
             usageFraction(context, latest.contextBudgetTokens),
             undefined,

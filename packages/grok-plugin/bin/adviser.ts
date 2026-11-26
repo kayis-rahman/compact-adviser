@@ -166,11 +166,9 @@ function testEndpoint(): string | undefined {
   return value !== undefined && LOOPBACK_ENDPOINT.test(value) ? value : undefined;
 }
 
-/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` from the hook environment. */
-function judgeEndpoint(): string {
-  const endpoint = testEndpoint() ?? typesafeEndpoint(process.env.TYPESAFE_BASE);
-  if (endpoint === undefined) throw new JudgeError("configuration");
-  return endpoint;
+/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` and `TYPESAFE_PATH`. */
+function resolveEndpoint(): string | undefined {
+  return testEndpoint() ?? typesafeEndpoint(process.env.TYPESAFE_BASE, process.env.TYPESAFE_PATH);
 }
 
 async function readBoundedText(response: Response): Promise<string> {
@@ -357,10 +355,11 @@ async function runStop(payload: HookPayload): Promise<void> {
   const fingerprint = checkpointKey(view.checkpointText);
   if (state.lastHintKey === fingerprint) return;
 
+  const endpoint = resolveEndpoint();
   let loggedBody: string | undefined;
   if (settings.logRequests) {
     try {
-      loggedBody = requestBody(view.state, profile);
+      loggedBody = requestBody(view.state, profile, endpoint);
       appendLog(sessionId, requestLogLine(loggedBody));
     } catch {
       // A body too large to send is reported by `judge` below; logging does not decide.
@@ -368,12 +367,13 @@ async function runStop(payload: HookPayload): Promise<void> {
   }
   let judgment: Awaited<ReturnType<typeof judge>>;
   try {
+    if (endpoint === undefined) throw new JudgeError("configuration");
     judgment = await judge(
       view.state,
       activeKey,
       {
         ...cancellableJudgeTransport(),
-        endpoint: judgeEndpoint(),
+        endpoint,
       },
       profile,
     );
@@ -392,7 +392,7 @@ async function runStop(payload: HookPayload): Promise<void> {
     appendLog(
       sessionId,
       responseLogLine(
-        loggedBody ?? requestBody(view.state, profile),
+        loggedBody ?? requestBody(view.state, profile, endpoint),
         judgment,
         fraction,
         undefined,

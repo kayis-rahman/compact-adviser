@@ -18,12 +18,14 @@ import {
   FLOOR_MAX,
   FLOOR_MIN,
   floorFor,
+  isDecideEndpoint,
   JUDGE_UNAVAILABLE_MESSAGE,
   JudgeError,
   judge,
   judgeErrorMessage,
   MAX_REQUEST_BYTES,
   parseJudgment,
+  QUESTIONS,
   qualifies,
   requestBody,
   score,
@@ -40,7 +42,7 @@ import {
   requestLogPath,
   responseLogLine,
 } from "../src/log.ts";
-import { apiResponse, assistant, harness, temp, toolResult } from "./helpers.ts";
+import { apiResponse, assistant, decideApiResponse, harness, temp, toolResult } from "./helpers.ts";
 
 test("config defaults, atomic persistence, field merging, contention and invalid files", (t) => {
   const dir = temp(t),
@@ -483,6 +485,38 @@ test("TYPESAFE_BASE keeps the default, swaps the base, and takes http only on a 
   ]) {
     assert.equal(typesafeEndpoint(base), undefined, base);
   }
+  assert.equal(
+    typesafeEndpoint("https://jevtypesafeai.com", "/api/v1/decide"),
+    "https://jevtypesafeai.com/api/v1/decide",
+  );
+  assert.equal(
+    typesafeEndpoint("https://jevtypesafeai.com/", " /api/v1/decide "),
+    "https://jevtypesafeai.com/api/v1/decide",
+  );
+  assert.equal(
+    typesafeEndpoint(undefined, "/api/v1/decide"),
+    "https://api.typesafe.ai/api/v1/decide",
+  );
+  for (const path of [undefined, "", "   "]) {
+    assert.equal(
+      typesafeEndpoint("https://jevtypesafeai.com", path),
+      "https://jevtypesafeai.com/v1/systemone",
+    );
+  }
+  for (const path of [
+    "api/v1/decide",
+    "/api/./decide",
+    "/api/../decide",
+    "/api/.",
+    "/api/..",
+    "/api/v1/decide?x=1",
+    "/api/v1/decide#frag",
+    "/api/v1 decide",
+    "/api/v1\\decide",
+    "/api/\x00decide",
+  ]) {
+    assert.equal(typesafeEndpoint("https://jevtypesafeai.com", path), undefined, path);
+  }
   let url: unknown;
   await judge(
     {},
@@ -497,6 +531,91 @@ test("TYPESAFE_BASE keeps the default, swaps the base, and takes http only on a 
     "https://proxy.example.test/v1/systemone",
   );
   assert.equal(url, "https://proxy.example.test/v1/systemone");
+});
+
+test("non-systemone endpoints adapt request and response into the OpenAI Decisions shape", async () => {
+  assert.equal(isDecideEndpoint(ENDPOINT), false);
+  assert.equal(isDecideEndpoint("https://proxy.example.test/vendors/typesafe/v1/systemone"), false);
+  assert.equal(isDecideEndpoint("https://jevtypesafeai.com/api/v1/decide"), true);
+  assert.equal(isDecideEndpoint("http://127.0.0.1:8787/custom"), true);
+
+  const decideEndpoint = "https://jevtypesafeai.com/api/v1/decide";
+  const sampleState = { phase: "done", savedArtifacts: ["report.md"] };
+  const wireBody = JSON.parse(requestBody(sampleState, undefined, decideEndpoint)) as {
+    model: string;
+    input: string;
+    questions: {
+      type: string;
+      name: string;
+      instructions: string;
+      choices: { value: string; description: string }[];
+    }[];
+  };
+  assert.equal(wireBody.model, "jev-latest");
+  assert.equal(wireBody.input, JSON.stringify(sampleState));
+  assert.deepEqual(wireBody.questions, [
+    {
+      type: "choice",
+      name: "done",
+      instructions: QUESTIONS.done.instructions,
+      choices: [
+        { value: "finished", description: QUESTIONS.done.criteria.finished },
+        { value: "not_finished", description: QUESTIONS.done.criteria.not_finished },
+        { value: "unclear", description: QUESTIONS.done.criteria.unclear },
+      ],
+    },
+    {
+      type: "choice",
+      name: "shape",
+      instructions: QUESTIONS.shape.instructions,
+      choices: [
+        { value: "hands_on", description: QUESTIONS.shape.criteria.hands_on },
+        { value: "coordinating", description: QUESTIONS.shape.criteria.coordinating },
+        { value: "unclear", description: QUESTIONS.shape.criteria.unclear },
+      ],
+    },
+  ]);
+
+  const expected = parseJudgment(apiResponse(0.93, 0.97));
+  const actual = parseJudgment(decideApiResponse(0.93, 0.97), decideEndpoint);
+  assert.deepEqual(actual, expected);
+  assert.equal(score(actual), score(expected));
+  assert.equal(qualifies(actual, 0.2), qualifies(expected, 0.2));
+
+  assert.throws(() => parseJudgment(apiResponse(), decideEndpoint), JudgeError);
+  assert.throws(() => parseJudgment(decideApiResponse(), ENDPOINT), JudgeError);
+  const dupAnswer = decideApiResponse();
+  dupAnswer.answers.push({ ...dupAnswer.answers[0]! });
+  assert.throws(() => parseJudgment(dupAnswer, decideEndpoint), JudgeError);
+  const dupProb = decideApiResponse();
+  dupProb.answers[0]!.probabilities.push({ value: "finished", probability: 0 });
+  assert.throws(() => parseJudgment(dupProb, decideEndpoint), JudgeError);
+  const badSum = decideApiResponse();
+  badSum.answers[0]!.probabilities[0]!.probability = 0.5;
+  assert.throws(() => parseJudgment(badSum, decideEndpoint), JudgeError);
+  assert.throws(
+    () => requestBody({ text: "x".repeat(MAX_REQUEST_BYTES) }, undefined, decideEndpoint),
+    JudgeError,
+  );
+
+  let sentBody = "";
+  let sentUrl = "";
+  const judged = await judge(
+    sampleState,
+    "fake-test-key",
+    new AbortController().signal,
+    (async (input, init) => {
+      sentUrl = String(input);
+      sentBody = String(init?.body);
+      return new Response(JSON.stringify(decideApiResponse(0.95, 0.9)), { status: 200 });
+    }) as typeof fetch,
+    undefined,
+    undefined,
+    decideEndpoint,
+  );
+  assert.equal(sentUrl, decideEndpoint);
+  assert.equal(JSON.parse(sentBody).input, JSON.stringify(sampleState));
+  assert.deepEqual(judged, parseJudgment(apiResponse(0.95, 0.9)));
 });
 
 test("judgment-failure notices explain the skip and which kinds can be temporary", () => {

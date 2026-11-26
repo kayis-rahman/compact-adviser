@@ -8,6 +8,11 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as agyDisable from "../../agy-plugin/lib/disable.ts";
+import * as agy from "../../agy-plugin/lib/judge.ts";
+import * as agyLog from "../../agy-plugin/lib/log.ts";
+import * as agySnapshot from "../../agy-plugin/lib/snapshot.ts";
+import * as agyState from "../../agy-plugin/lib/state.ts";
 import * as claudeDisable from "../../claude-mod/lib/disable.ts";
 import * as claude from "../../claude-mod/lib/judge.ts";
 import * as claudeLog from "../../claude-mod/lib/log.ts";
@@ -52,7 +57,7 @@ test("every host classifies HTTP 402 as billing without exposing the response bo
       new AbortController().signal,
       (async () => new Response(body, { status: 402 })) as typeof fetch,
     ),
-    ...[claude, codex, grok].map((host) =>
+    ...[claude, codex, grok, agy].map((host) =>
       host.judge(state, "fixture-key", {
         fetch: async () => ({ status: 402, ok: false, text: body }),
         sleep: () => new Promise(() => {}),
@@ -73,15 +78,21 @@ test("every host classifies HTTP 402 as billing without exposing the response bo
 });
 
 test("every package sends byte-identical request bodies", () => {
+  const decide = "https://jevtypesafeai.com/api/v1/decide";
   for (const s of [state, { ...state, recent: [] }, {}, null]) {
     assert.equal(claude.requestBody(s), pi.requestBody(s));
     assert.equal(codex.requestBody(s), pi.requestBody(s));
     assert.equal(grok.requestBody(s), pi.requestBody(s));
+    assert.equal(agy.requestBody(s), pi.requestBody(s));
+    assert.equal(claude.requestBody(s, undefined, decide), pi.requestBody(s, undefined, decide));
+    assert.equal(codex.requestBody(s, undefined, decide), pi.requestBody(s, undefined, decide));
+    assert.equal(grok.requestBody(s, undefined, decide), pi.requestBody(s, undefined, decide));
+    assert.equal(agy.requestBody(s, undefined, decide), pi.requestBody(s, undefined, decide));
   }
 });
 
 test("the question set and the floor schedule match", () => {
-  for (const other of [claude, codex, grok]) {
+  for (const other of [claude, codex, grok, agy]) {
     assert.deepEqual(other.QUESTIONS, pi.QUESTIONS);
     assert.equal(other.FLOOR_MAX, pi.FLOOR_MAX);
     assert.equal(other.FLOOR_MIN, pi.FLOOR_MIN);
@@ -137,13 +148,34 @@ test("every package resolves a TYPESAFE_BASE override to the same endpoint", () 
     "https://proxy.example.test/?region=us",
     "https://proxy.example.test/#top",
   ];
+  const paths = [
+    undefined,
+    "",
+    "  ",
+    "/api/v1/decide",
+    "/v1/systemone",
+    "api/v1/decide",
+    "/api/../decide",
+    "/api/./decide",
+    "/api/v1/decide?x=1",
+    "/api/v1/decide#top",
+    "/api/v1 decide",
+    "/api\\v1",
+  ];
   for (const base of bases) {
-    for (const other of [claude, codex, grok]) {
-      assert.equal(other.typesafeEndpoint(base), pi.typesafeEndpoint(base), String(base));
+    for (const path of paths) {
+      for (const other of [claude, codex, grok, agy]) {
+        assert.equal(
+          other.typesafeEndpoint(base, path),
+          pi.typesafeEndpoint(base, path),
+          `${String(base)} ${String(path)}`,
+        );
+      }
     }
   }
-  for (const other of [claude, codex, grok]) {
+  for (const other of [claude, codex, grok, agy]) {
     assert.equal(other.DEFAULT_BASE, pi.DEFAULT_BASE);
+    assert.equal(other.DEFAULT_PATH, pi.DEFAULT_PATH);
     assert.equal(other.judgeErrorMessage("configuration"), pi.judgeErrorMessage("configuration"));
   }
 });
@@ -171,6 +203,7 @@ test("every package scores and gates the same judgments the same way", () => {
         ["claude", claude],
         ["codex", codex],
         ["grok", grok],
+        ["agy", agy],
       ] as const) {
         assert.equal(other.score(judgment), pi.score(judgment));
         for (const usage of [Number.NaN, 0, 0.3, 0.5, 0.7, 0.85, 1]) {
@@ -204,11 +237,46 @@ test("every package parses the same wire response into the same judgment", () =>
     },
     usage: { input_tokens: 7440, output_tokens: 44 },
   };
+  const decideEndpoint = "https://jevtypesafeai.com/api/v1/decide";
+  const decideResponse = {
+    model: "jev-1.13.0",
+    answers: [
+      {
+        type: "choice",
+        name: "done",
+        choice: "finished",
+        confidence: 0.88,
+        probabilities: [
+          { value: "finished", probability: 0.93 },
+          { value: "not_finished", probability: 0.06 },
+          { value: "unclear", probability: 0.01 },
+        ],
+      },
+      {
+        type: "choice",
+        name: "shape",
+        choice: "hands_on",
+        confidence: 0.95,
+        probabilities: [
+          { value: "hands_on", probability: 0.97 },
+          { value: "coordinating", probability: 0.02 },
+          { value: "unclear", probability: 0.01 },
+        ],
+      },
+    ],
+    usage: { input_tokens: 7440, output_tokens: 44 },
+  };
   assert.deepEqual(claude.parseJudgment(response), pi.parseJudgment(response));
   assert.deepEqual(codex.parseJudgment(response), pi.parseJudgment(response));
   assert.deepEqual(grok.parseJudgment(response), pi.parseJudgment(response));
+  assert.deepEqual(agy.parseJudgment(response), pi.parseJudgment(response));
+  assert.deepEqual(pi.parseJudgment(decideResponse, decideEndpoint), pi.parseJudgment(response));
   assert.equal(claude.qualifies(pi.parseJudgment(response), 0.2), true);
-  for (const other of [claude, codex, grok]) {
+  for (const other of [claude, codex, grok, agy]) {
+    assert.deepEqual(
+      other.parseJudgment(decideResponse, decideEndpoint),
+      pi.parseJudgment(decideResponse, decideEndpoint),
+    );
     assert.equal(
       other.qualifies(pi.parseJudgment(response), 0.2),
       pi.qualifies(pi.parseJudgment(response), 0.2),
@@ -277,6 +345,7 @@ test("every package extracts the same written paths from the same shell commands
     claudeSnapshot.shellWrittenPaths,
     codexRollout.shellWrittenPaths,
     grokSnapshot.shellWrittenPaths,
+    agySnapshot.shellWrittenPaths,
     piContext.shellWrittenPaths,
   ];
   for (const command of commands) {
@@ -371,7 +440,7 @@ test("every package scrubs owned settings fields and known key values the same w
     typesafeApiKey: secret,
     "compact-adviser.typesafeApiKey": secret,
   });
-  for (const other of [claudeSnapshot, codexSnapshot, grokSnapshot]) {
+  for (const other of [claudeSnapshot, codexSnapshot, grokSnapshot, agySnapshot]) {
     assert.deepEqual(other.redact(dump), piContext.redact(dump));
     assert.deepEqual(other.redactOwnedSettings(dump), piContext.redactOwnedSettings(dump));
     assert.deepEqual(
@@ -408,6 +477,7 @@ test("every package writes the same TypeSafe log line shape", () => {
     [claudeLog, claude],
     [codexLog, codex],
     [grokLog, grok],
+    [agyLog, agy],
   ] as const) {
     assert.equal(other.requestLogId(body), piLog.requestLogId(body));
     assert.equal(other.requestLogLine(body, at), piLog.requestLogLine(body, at));
@@ -516,6 +586,8 @@ test("every package applies the same cooldownReason gates", () => {
     }
     const grok = { ...grokState.initialState(c.compacted, c.now), ...c.patch };
     assert.equal(grokState.cooldownReason(grok, c.tokens, c.now), c.reason, `grok ${c.name}`);
+    const agyS = { ...agyState.initialState(c.compacted, c.now), ...c.patch };
+    assert.equal(agyState.cooldownReason(agyS, c.tokens, c.now), c.reason, `agy ${c.name}`);
   }
 });
 
@@ -524,7 +596,7 @@ test("every package reads the same COMPACT_ADVISER_DISABLE values the same way",
   const truthy = ["1", "true", "TRUE", "True", "yes", "YES", "on", "ON", " on ", "\ttrue\n"];
   const falsy = ["0", "false", "no", "off", "", " ", "2", "1 0", "enabled", undefined];
   for (const value of [...truthy, ...falsy]) {
-    for (const other of [claudeDisable, codexDisable, grokDisable]) {
+    for (const other of [claudeDisable, codexDisable, grokDisable, agyDisable]) {
       assert.equal(other.DISABLE_ENV, piDisable.DISABLE_ENV);
       assert.equal(
         other.disabledByEnv(value),

@@ -14,7 +14,7 @@ const hooksQuoted = hooksUnquoted.replace(
   'config.describe{key="compact-adviser.typesafeApiKey"}',
 );
 const expected = [
-  "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, COMPACT_ADVISER_DISABLE, COMPACT_ADVISER_TEST_ENDPOINT, HOME, TYPESAFE_API_KEY, TYPESAFE_BASE",
+  "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, COMPACT_ADVISER_DISABLE, COMPACT_ADVISER_TEST_ENDPOINT, HOME, TYPESAFE_API_KEY, TYPESAFE_BASE, TYPESAFE_PATH",
   "env writes: nothing",
   "$.fs.read (via appendTypeSafeLog, resolvedKey)",
   "$.fs.write (via appendTypeSafeLog)",

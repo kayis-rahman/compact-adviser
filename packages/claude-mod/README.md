@@ -30,15 +30,15 @@
 
 It uses [Jev](https://typesafe.ai) to instantly judge whether the current session is likely at a boundary that's safe to compact.
 
-It can give you a hint to run `/compact` - or, on Pi and Claude Code, if you opt in, it can run it for you at the right time automatically. Codex CLI and Grok are hint-only: nothing outside their sessions can trigger `/compact`.
+It can give you a hint to run `/compact` - or, on Pi and Claude Code, if you opt in, it can run it for you at the right time automatically. Codex CLI, Grok, and Antigravity CLI (`agy`) are hint-only: nothing outside their sessions can trigger `/compact`.
 
 Judgment is two one-sentence Jev questions in one request (is the unit finished; is this hands-on work or coordination), composed in code into one score. The hint floor is 0.90 while the context is mostly empty (through about 10%) and relaxes toward 0.50 by about 90% full - a wrong hint costs most when there is still room. "Full" means the point where the host compacts: on Claude Code that is its auto-compact threshold when enabled, elsewhere the model's window. If you would rather compact well before that (long contexts cost more every turn), set a context budget: the floor then relaxes as the context approaches the smaller of your budget and that point. Automatic mode is the same gate, plus a first-use confirmation.
 
 ## Quick Start
 
-Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment or put it in the session cwd's `./.env`; Pi and Claude Code can also save it through their settings, while Codex and Grok provide an external compact-adviser CLI. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
+Prerequisites: Node 22+ (22.18+ for Codex, Grok, and Antigravity), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), or Antigravity CLI (`agy`, verified on **1.5.15**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment or put it in the session cwd's `./.env`; Pi and Claude Code can also save it through their settings, while Codex, Grok, and Antigravity provide an external compact-adviser CLI. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
 
-Installing the package is consent to send eligible checkpoint context to TypeSafe when a key is available and the other product gates pass. With `TYPESAFE_BASE` set, that context and the key go to that base instead.
+Installing the package is consent to send eligible checkpoint context to TypeSafe when a key is available and the other product gates pass. With `TYPESAFE_BASE` (and optionally `TYPESAFE_PATH`) set, that context and the key go to that endpoint instead.
 
 ### Pi
 
@@ -106,12 +106,24 @@ Then paste the `[ui.status_line]` block `install` printed into the config.toml p
 
 On Grok, save the TypeSafe key as `TYPESAFE_API_KEY` or a cwd `.env`, or with the CLI `key` command from a shell outside Grok. Do not type secrets after a Grok slash command; Grok appends those words to the model.
 
+### Antigravity CLI (`agy`)
+
+Antigravity is **hint-only**: `agy` exposes no way to trigger `/compact` from outside a session. The `Stop` hook judges a completed turn and writes a verdict, and `PreInvocation` displays the hint to the person via `user_markdown` with an empty `systemMessage` so nothing enters the model's context.
+
+`agy` loads `<workspace>/.agents/hooks.json` **per workspace**, where every top-level key is a named hook spec. Install merges only the `compact-adviser` key into `<workspace>/.agents/hooks.json` and leaves any existing named specs (such as `firstmate`) untouched:
+
+```sh
+node packages/agy-plugin/bin/adviser.ts install /path/to/workspace
+```
+
+Restart `agy` in that workspace to load the hooks. Run `uninstall [workspace]` to remove only the `compact-adviser` spec. Configure settings or check status with `node packages/agy-plugin/bin/adviser.ts status` (or `mode`, `threshold`, `budget`, `key`, `log`, `snooze`, `dismiss`).
+
 ## If it does nothing
 
 | Symptom | Cause |
 | --- | --- |
 | TypeSafe requires payment (HTTP 402) | Check the TypeSafe account's billing and credits; waiting alone will not resolve a payment requirement. Context stays unchanged. |
-| `Key: missing` in `/compact-adviser status` (Pi, Claude Code) or `/compact-adviser` (Grok) | No `TYPESAFE_API_KEY` in the launch environment, saved settings, or the session cwd's `./.env` |
+| `Key: missing` in `/compact-adviser status` (Pi, Claude Code), `/compact-adviser` (Grok), or `status` (Codex, Antigravity) | No `TYPESAFE_API_KEY` in the launch environment, saved settings, or the session cwd's `./.env` |
 | No `/compact-adviser` command in Claude Code | `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is not exactly `1` |
 | Command exists, no hint | Context is below the constant 40,000-token minimum, the session is not idle, or the last turn was not a settled final answer |
 | Claude Code: "nonessential traffic" | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` blocks plugin network requests |
@@ -126,7 +138,8 @@ On Grok, save the TypeSafe key as `TYPESAFE_API_KEY` or a cwd `.env`, or with th
 | Variable | Effect |
 | --- | --- |
 | `TYPESAFE_API_KEY` | The Jev key; a saved key or the session cwd's `./.env` is used when this is unset |
-| `TYPESAFE_BASE` | Replaces the TypeSafe API base URL, `https://api.typesafe.ai` by default; the request goes to `<base>/v1/systemone` with a trailing slash dropped. Read from the launch environment only, never a saved setting or `./.env`. It must be an `https` URL; plain `http` is accepted only for a loopback host (`127.0.0.1`, `[::1]`, `localhost`). Any other value, or one that carries credentials, a query or a fragment, is a configuration error: no request and no advice |
+| `TYPESAFE_BASE` | Replaces the TypeSafe API base URL, `https://api.typesafe.ai` by default; the request goes to `<base>/v1/systemone` (or `<base><TYPESAFE_PATH>` when `TYPESAFE_PATH` is set) with a trailing slash dropped. Read from the launch environment only, never a saved setting or `./.env`. It must be an `https` URL; plain `http` is accepted only for a loopback host (`127.0.0.1`, `[::1]`, `localhost`). Any other value, or one that carries credentials, a query or a fragment, is a configuration error: no request and no advice |
+| `TYPESAFE_PATH` | Optional custom request path replacing `/v1/systemone` (for example `/api/v1/decide` on a compatible Jev host; paths not ending in `/v1/systemone` use the Decisions request/response wire format). Read from the launch environment only, never a saved setting or `./.env`. Must start with `/` and contain no whitespace, control characters, backslash, `?`, `#`, or `.` / `..` segments; any other value is a configuration error |
 | `COMPACT_ADVISER_DISABLE` | `1`, `true`, `yes` or `on` (any case) makes the session inert: no TypeSafe request, no hint, no automatic compaction, no command. It wins over a saved `hint` or `auto` mode |
 | `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` | Claude Code only; must be exactly `1` for the mod to load |
 | `COMPACT_ADVISER_NODE` | Codex only; absolute path to a Node 22.18 or newer executable when the hook cannot find one on its rebuilt PATH |
@@ -140,7 +153,7 @@ Export `COMPACT_ADVISER_DISABLE=1` for unattended agent sessions, where advice h
 | Bounded user constraints, up to the last 64 visible replies and tool results (clipped), short tool-result excerpts, an existing summary, saved-artifact names, omission markers | System prompts, hidden reasoning, images, environment variables, the API key in the model context and request body, complete transcripts |
 | Best-effort redaction of known key patterns and obvious sensitive-file results | A guarantee. Uninstall or set mode Off for material that must not leave the machine |
 
-Requests go to `https://api.typesafe.ai/v1/systemone`, or `<TYPESAFE_BASE>/v1/systemone` when that is set, are capped at 32,000 serialized UTF-8 bytes, and never treat an error as an affirmative judgment.
+Requests go to `https://api.typesafe.ai/v1/systemone`, or `<TYPESAFE_BASE><TYPESAFE_PATH>` when either override is set, are capped at 32,000 serialized UTF-8 bytes, and never treat an error as an affirmative judgment.
 The TypeSafe API key never enters the model context or the request body; it is sent as the Authorization header to authenticate the call.
 Details: [SECURITY.md](https://github.com/kunchenguid/compact-adviser/blob/main/SECURITY.md).
 
@@ -173,8 +186,8 @@ runs one turn before that automatic compaction, and only after auto mode is conf
 mentions in a prompt a plugin submits, and it rejects a plugin prompt that starts with `/`, so a
 value that starts with `/` is run as a command instead of being sent to the model as text. If you
 send your own prompt or run a command in between, or that turn is interrupted, errors, or does not
-finish within 5 minutes, nothing is compacted. Hint mode, off, and an empty setting are unchanged. Pi, Codex, and
-Grok do not have this setting.
+finish within 5 minutes, nothing is compacted. Hint mode, off, and an empty setting are unchanged. Pi, Codex, Grok, and
+Antigravity do not have this setting.
 
 ## Usage
 
@@ -198,9 +211,11 @@ On Codex the same commands are arguments to the plugin's `src/cli.ts` (`status`,
 command, because Codex plugins cannot register a command with code behind it. Codex has no
 snooze or dismiss: the CLI cannot tell which session is current.
 
+On Antigravity, settings and session controls (`status`, `mode`, `threshold`, `budget`, `log`, `key`, `snooze`, `dismiss`, `install`, `uninstall`) run through `node packages/agy-plugin/bin/adviser.ts` as shown in Quick Start.
+
 ## Judge profiles
 
-An optional [judge profile](https://github.com/kunchenguid/compact-adviser/blob/main/docs/judge-profiles.md) changes the two questions, score weight, or floor schedule without changing shipped defaults. All four hosts accept the same bounded JSON string in the `profile` setting. Keep hint mode while evaluating a profile. Invalid profiles disable advice, and loading a profile never grants automatic-mode consent.
+An optional [judge profile](https://github.com/kunchenguid/compact-adviser/blob/main/docs/judge-profiles.md) changes the two questions, score weight, or floor schedule without changing shipped defaults. All five hosts accept the same bounded JSON string in the `profile` setting. Keep hint mode while evaluating a profile. Invalid profiles disable advice, and loading a profile never grants automatic-mode consent.
 
 ## Eval
 

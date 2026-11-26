@@ -74,11 +74,9 @@ function testEndpoint(env: NodeJS.ProcessEnv): string | undefined {
   return value !== undefined && LOOPBACK_ENDPOINT.test(value) ? value : undefined;
 }
 
-/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` from the launch environment. */
-function judgeEndpoint(env: NodeJS.ProcessEnv): string {
-  const endpoint = testEndpoint(env) ?? typesafeEndpoint(env.TYPESAFE_BASE);
-  if (endpoint === undefined) throw new JudgeError("configuration");
-  return endpoint;
+/** The live regression's fixture, else TypeSafe under `TYPESAFE_BASE` and `TYPESAFE_PATH`. */
+function resolveEndpoint(env: NodeJS.ProcessEnv): string | undefined {
+  return testEndpoint(env) ?? typesafeEndpoint(env.TYPESAFE_BASE, env.TYPESAFE_PATH);
 }
 
 /** Launch environment, then the key saved in settings, then `TYPESAFE_API_KEY` in `cwd/.env`. */
@@ -190,10 +188,11 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
   const fingerprint = await checkpointKey(view.checkpointText);
   if (state.lastHintKey === fingerprint) return {};
 
+  const endpoint = resolveEndpoint(environment.env);
   let loggedBody: string | undefined;
   if (config.logRequests) {
     try {
-      loggedBody = requestBody(view.state, profile);
+      loggedBody = requestBody(view.state, profile, endpoint);
       appendRequestLogLine(root, sessionId, requestLogLine(loggedBody));
     } catch {
       // Request logging must not replace or delay the judgment.
@@ -202,12 +201,13 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
 
   let result: Awaited<ReturnType<typeof judge>>;
   try {
+    if (endpoint === undefined) throw new JudgeError("configuration");
     result = await judge(
       view.state,
       key.value,
       {
         ...cancellableJudgeTransport(environment.fetch),
-        endpoint: judgeEndpoint(environment.env),
+        endpoint,
       },
       profile,
     );
@@ -237,7 +237,7 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
         root,
         sessionId,
         responseLogLine(
-          loggedBody ?? requestBody(view.state, profile),
+          loggedBody ?? requestBody(view.state, profile, endpoint),
           result,
           fraction,
           undefined,

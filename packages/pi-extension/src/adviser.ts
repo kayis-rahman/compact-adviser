@@ -83,7 +83,7 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
   const evaluate =
     options.evaluate ??
     ((state, key, signal, profile) => {
-      const endpoint = typesafeEndpoint(process.env.TYPESAFE_BASE);
+      const endpoint = typesafeEndpoint(process.env.TYPESAFE_BASE, process.env.TYPESAFE_PATH);
       if (endpoint === undefined) return Promise.reject(new JudgeError("configuration"));
       return judge(state, key, signal, undefined, undefined, profile, endpoint);
     });
@@ -185,10 +185,11 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
     const profile = parseProfile(config.profile);
     const view = snapshot(ctx, [key(ctx.cwd), savedApiKey(store)]);
     if (view.conversationTokens <= 20000 || view.checkpointKey === state.lastHintKey) return;
+    const endpoint = typesafeEndpoint(process.env.TYPESAFE_BASE, process.env.TYPESAFE_PATH);
     let loggedBody: string | undefined;
     if (config.logRequests) {
       try {
-        loggedBody = requestBody(view.state, profile);
+        loggedBody = requestBody(view.state, profile, endpoint);
         appendRequestLog(options.agentDir, loggedBody);
       } catch {
         // Request logging must not replace or delay the judgment.
@@ -213,7 +214,7 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
         try {
           appendResponseLog(
             options.agentDir,
-            loggedBody ?? requestBody(view.state, profile),
+            loggedBody ?? requestBody(view.state, profile, endpoint),
             result,
             usageFraction(ctx, config),
             profile,
