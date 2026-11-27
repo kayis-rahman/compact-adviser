@@ -21,7 +21,7 @@ export interface Settings {
   version: 1;
   mode: Mode;
   minContextTokens: number;
-  /** Tokens at which the hint floor is fully relaxed; 0 uses the model's window. */
+  /** Tokens at which the hint floor is fully relaxed; 0 disables the budget (agy exposes no window). */
   contextBudgetTokens: number;
   logRequests: boolean;
   /** Saved TypeSafe key; a non-empty `TYPESAFE_API_KEY` in the environment still wins. */
@@ -54,7 +54,7 @@ export function parseMinimum(text: string): number {
   return number;
 }
 
-/** A context budget in tokens, or 0 for "off" (the model's window). */
+/** A context budget in tokens, or 0 for "off" (strictest floor since agy exposes no window). */
 export function parseBudget(text: string): number {
   const value = text.trim();
   if (value === "off") return 0;

@@ -83,7 +83,7 @@ export const TIMEOUT_MS = 2000;
  * place. The composed score (see `score`) ranks checkpoints so that a floor
  * sliding with context usage traces a smooth precision/recall curve.
  *
- * Both packages must send this byte-for-byte identically; test/lockstep.test.ts
+ * All host packages must send this byte-for-byte identically; test/lockstep.test.ts
  * in the Pi package enforces that.
  */
 export const QUESTIONS = {

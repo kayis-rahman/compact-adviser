@@ -6,7 +6,7 @@
 // It wins over every saved mode and every other enablement path.
 //
 // Keep this file byte-identical across host packages; `lockstep.test.ts` compares the
-// parse across both copies.
+// parse across all copies.
 
 export const DISABLE_ENV = "COMPACT_ADVISER_DISABLE";
 

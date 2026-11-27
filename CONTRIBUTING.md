@@ -76,7 +76,7 @@ The workflow authenticates to npm with GitHub Actions OIDC (`id-token: write`) a
    - Environment: leave empty
 3. Do not add `NPM_TOKEN` or `NODE_AUTH_TOKEN` repository secrets.
 
-Claude Code, Codex, and Grok users only receive plugin updates when their plugin manifest `version` changes; release-please bumps all three plugin manifests, all four package manifests, and the Claude and Grok marketplace indexes as extra-files of the single root package.
+Claude Code, Codex, and Grok users only receive plugin updates when their plugin manifest `version` changes; release-please bumps all three plugin manifests, the Pi, Claude Code, Codex, and Grok package manifests, and the Claude and Grok marketplace indexes as extra-files of the single root package.
 
 ## Questions
 
