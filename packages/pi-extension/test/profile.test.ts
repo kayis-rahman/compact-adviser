@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import * as agyJudge from "../../agy-plugin/lib/judge.ts";
+import * as agy from "../../agy-plugin/lib/profile.ts";
 import { readConfig } from "../../claude-mod/lib/config.ts";
 import * as claudeJudge from "../../claude-mod/lib/judge.ts";
 import * as claude from "../../claude-mod/lib/profile.ts";
@@ -26,8 +28,8 @@ const defaults = {
   ],
 };
 const tailored = { version: 1, coordinationWeight: 0, floors: [[0, 0.6]] };
-const parsers = [pi, claude, codex, grok];
-const judges = [judge, claudeJudge, codexJudge, grokJudge];
+const parsers = [pi, claude, codex, grok, agy];
+const judges = [judge, claudeJudge, codexJudge, grokJudge, agyJudge];
 
 test("profiles preserve default request bytes and decisions across every host", () => {
   const profile = pi.parseProfile(JSON.stringify(defaults));
@@ -139,7 +141,7 @@ test("all real judge transports send selected questions", async () => {
     100,
     profile,
   );
-  for (const module of [claudeJudge, codexJudge, grokJudge]) {
+  for (const module of [claudeJudge, codexJudge, grokJudge, agyJudge]) {
     await module.judge(
       {},
       "test-key",
@@ -153,6 +155,6 @@ test("all real judge transports send selected questions", async () => {
       profile,
     );
   }
-  assert.equal(bodies.length, 4);
+  assert.equal(bodies.length, 5);
   for (const body of bodies) assert.deepEqual(JSON.parse(body).questions, questions);
 });

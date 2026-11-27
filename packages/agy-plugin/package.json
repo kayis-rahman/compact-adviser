@@ -1,0 +1,24 @@
+{
+  "name": "compact-adviser-agy-plugin",
+  "version": "0.1.14",
+  "private": true,
+  "license": "MIT",
+  "description": "A standalone Antigravity CLI (agy) hook package that suggests semantic checkpoints for context compaction.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check-readme": "node scripts/check-readme.mjs",
+    "test": "node --test test/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm run check-readme && npm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

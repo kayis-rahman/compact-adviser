@@ -47,6 +47,34 @@ export const apiResponse = (finished = 0.995, handsOn = 0.99) => ({
     },
   },
 });
+export const decideApiResponse = (finished = 0.995, handsOn = 0.99) => ({
+  model: "jev-test",
+  usage: { input_tokens: 2000, output_tokens: 60 },
+  answers: [
+    {
+      type: "choice",
+      name: "done",
+      choice: finished >= 0.5 ? "finished" : "not_finished",
+      confidence: Math.abs(finished - 0.5) * 2,
+      probabilities: [
+        { value: "finished", probability: finished },
+        { value: "not_finished", probability: Number((1 - finished).toFixed(6)) },
+        { value: "unclear", probability: 0 },
+      ],
+    },
+    {
+      type: "choice",
+      name: "shape",
+      choice: handsOn >= 0.5 ? "hands_on" : "coordinating",
+      confidence: Math.abs(handsOn - 0.5) * 2,
+      probabilities: [
+        { value: "hands_on", probability: handsOn },
+        { value: "coordinating", probability: Number((1 - handsOn).toFixed(6)) },
+        { value: "unclear", probability: 0 },
+      ],
+    },
+  ],
+});
 export function success(): Judgment {
   return parseJudgment(apiResponse());
 }

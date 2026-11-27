@@ -31,7 +31,7 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Repo conventions
 
-- Node 22+, TypeScript, four independently installable packages.
+- Node 22+, TypeScript, five independently installable packages.
 - Install each package from the repository root:
 
   ```sh
@@ -39,9 +39,10 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
   npm --prefix packages/claude-mod ci --ignore-scripts
   npm --prefix packages/codex-plugin ci --ignore-scripts
   npm --prefix packages/grok-plugin ci --ignore-scripts
+  npm --prefix packages/agy-plugin ci --ignore-scripts
   ```
 
-- Before pushing, run `npm run check`, `npm run check:claude-mod`, `npm run check:codex-plugin`, and `npm run check:grok-plugin`.
+- Before pushing, run `npm run check`, `npm run check:claude-mod`, `npm run check:codex-plugin`, `npm run check:grok-plugin`, and `npm run check:agy-plugin`.
   The live suites are `COMPACT_TEST_PI_BIN="$(command -v pi)" npm run test:e2e`, `npm run test:e2e:claude-mod` and `npm run test:e2e:codex-plugin` (both need `tmux`), and `npm run test:e2e:grok-plugin` (needs the pinned `grok` on `PATH`; it runs offline against local fixtures and never touches your own `~/.grok`).
   Resolve the Pi binary **before** npm modifies PATH.
 - CI host pins live in [`.github/host-versions.env`](.github/host-versions.env). Bump a host only after its live E2E suite passes on the new version.
@@ -51,10 +52,10 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Package READMEs
 
-`packages/pi-extension/README.md`, `packages/claude-mod/README.md`, `packages/codex-plugin/README.md`, and `packages/grok-plugin/README.md` are generated from the root `README.md` by [`scripts/generate-package-readme.mjs`](scripts/generate-package-readme.mjs), which rewrites root-relative links and images (including sibling-package docs, `SECURITY.md`, and assets under `docs/`) into absolute `github.com`/`raw.githubusercontent.com` URLs so they still resolve from npm and the plugin marketplaces. Do not hand-edit package READMEs; edit the root `README.md` and run `npm run sync-readmes`.
+`packages/pi-extension/README.md`, `packages/claude-mod/README.md`, `packages/codex-plugin/README.md`, `packages/grok-plugin/README.md`, and `packages/agy-plugin/README.md` are generated from the root `README.md` by [`scripts/generate-package-readme.mjs`](scripts/generate-package-readme.mjs), which rewrites root-relative links and images (including sibling-package docs, `SECURITY.md`, and assets under `docs/`) into absolute `github.com`/`raw.githubusercontent.com` URLs so they still resolve from npm and the plugin marketplaces. Do not hand-edit package READMEs; edit the root `README.md` and run `npm run sync-readmes`.
 
 - `packages/pi-extension`'s `prepack` script regenerates its `README.md` on every `npm pack`/`npm publish` (CI trusted-publish or manual), so the published tarball always carries current root-README content regardless of what's committed.
-- Every committed copy is still checked in CI so a stale copy fails a PR instead of only being masked at publish time: `packages/pi-extension/test/readme.test.ts` diffs the committed file against the generator before packing, then diffs the tarball's README; the `check-readme` scripts in `packages/claude-mod`, `packages/codex-plugin`, and `packages/grok-plugin` (part of each package's `check`) diff the committed files, since those packages have no pack/publish step and the marketplaces read the committed files directly.
+- Every committed copy is still checked in CI so a stale copy fails a PR instead of only being masked at publish time: `packages/pi-extension/test/readme.test.ts` diffs the committed file against the generator before packing, then diffs the tarball's README; the `check-readme` scripts in `packages/claude-mod`, `packages/codex-plugin`, `packages/grok-plugin`, and `packages/agy-plugin` (part of each package's `check`) diff the committed files, since those packages have no pack/publish step and the marketplaces read the committed files directly.
 
 The npm page only picks up a README change on the *next* publish (a manual `npm publish` or a merged release-please PR), not retroactively.
 
@@ -75,7 +76,7 @@ The workflow authenticates to npm with GitHub Actions OIDC (`id-token: write`) a
    - Environment: leave empty
 3. Do not add `NPM_TOKEN` or `NODE_AUTH_TOKEN` repository secrets.
 
-Claude Code, Codex, and Grok users only receive plugin updates when their plugin manifest `version` changes; release-please bumps all three plugin manifests, all four package manifests, and the Claude and Grok marketplace indexes as extra-files of the single root package.
+Claude Code, Codex, and Grok users only receive plugin updates when their plugin manifest `version` changes; release-please bumps all three plugin manifests, the Pi, Claude Code, Codex, and Grok package manifests, and the Claude and Grok marketplace indexes as extra-files of the single root package.
 
 ## Questions
 

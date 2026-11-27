@@ -12,7 +12,15 @@ import {
 } from "../src/judge.ts";
 import { requestLogPath } from "../src/log.ts";
 import { restoreState } from "../src/state.ts";
-import { apiResponse, assistant, flush, harness, success, toolResult } from "./helpers.ts";
+import {
+  apiResponse,
+  assistant,
+  decideApiResponse,
+  flush,
+  harness,
+  success,
+  toolResult,
+} from "./helpers.ts";
 
 const HINT = "Compact adviser: work appears completed or recorded. Run /compact to save tokens.";
 const HINT_LINE = `warning:${HINT}`;
@@ -537,7 +545,11 @@ test("a judgment failure logs the error kind without the key", async (t) => {
 });
 
 test("TYPESAFE_BASE redirects the product's judge and an invalid base asks nobody", async (t) => {
-  const previous = { base: process.env.TYPESAFE_BASE, fetch: globalThis.fetch };
+  const previous = {
+    base: process.env.TYPESAFE_BASE,
+    path: process.env.TYPESAFE_PATH,
+    fetch: globalThis.fetch,
+  };
   const urls: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request) => {
     urls.push(String(input));
@@ -547,7 +559,10 @@ test("TYPESAFE_BASE redirects the product's judge and an invalid base asks nobod
     globalThis.fetch = previous.fetch;
     if (previous.base === undefined) delete process.env.TYPESAFE_BASE;
     else process.env.TYPESAFE_BASE = previous.base;
+    if (previous.path === undefined) delete process.env.TYPESAFE_PATH;
+    else process.env.TYPESAFE_PATH = previous.path;
   });
+  delete process.env.TYPESAFE_PATH;
   for (const [base, expected] of [
     [undefined, ENDPOINT],
     [
@@ -580,6 +595,68 @@ test("TYPESAFE_BASE redirects the product's judge and an invalid base asks nobod
     .split("\n")
     .map((line) => JSON.parse(line));
   assert.deepEqual(lines.at(-1).error, { kind: "configuration" });
+});
+
+test("TYPESAFE_PATH replaces /v1/systemone and an invalid path asks nobody", async (t) => {
+  const previous = {
+    base: process.env.TYPESAFE_BASE,
+    path: process.env.TYPESAFE_PATH,
+    fetch: globalThis.fetch,
+  };
+  const urls: string[] = [];
+  const bodies: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(input));
+    bodies.push(String(init?.body ?? ""));
+    return new Response(JSON.stringify(decideApiResponse()), { status: 200 });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = previous.fetch;
+    if (previous.base === undefined) delete process.env.TYPESAFE_BASE;
+    else process.env.TYPESAFE_BASE = previous.base;
+    if (previous.path === undefined) delete process.env.TYPESAFE_PATH;
+    else process.env.TYPESAFE_PATH = previous.path;
+  });
+  process.env.TYPESAFE_BASE = "https://jevtypesafeai.com";
+  process.env.TYPESAFE_PATH = "/api/v1/decide";
+  const h = harness(t);
+  h.install("0.82.0", "test-key", true);
+  h.enable();
+  h.store.update({ logRequests: true });
+  await h.fire("agent_settled");
+  assert.deepEqual(urls, ["https://jevtypesafeai.com/api/v1/decide"]);
+  const sent = JSON.parse(bodies[0] ?? "{}") as {
+    model: string;
+    input: string;
+    questions: { name: string; choices: { value: string; description: string }[] }[];
+  };
+  assert.equal(sent.model, "jev-latest");
+  assert.equal(typeof sent.input, "string");
+  assert.deepEqual(
+    sent.questions.map((q) => q.name),
+    ["done", "shape"],
+  );
+  assert.ok(showedHint(h));
+  const logged = readFileSync(requestLogPath(h.dir), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(logged[0].kind, "request");
+  assert.equal(logged[0].body.input, sent.input);
+  assert.equal(logged[1].kind, "response");
+  assert.equal(logged[1].id, logged[0].id);
+  assert.equal(logged[1].qualifies, true);
+
+  process.env.TYPESAFE_PATH = "/api/../decide";
+  const bad = harness(t);
+  bad.install("0.82.0", "test-key", true);
+  bad.enable();
+  bad.store.update({ logRequests: true });
+  urls.length = 0;
+  await bad.fire("agent_settled");
+  assert.deepEqual(urls, []);
+  assert.ok(!showedHint(bad));
+  assert.ok(bad.notifications.includes(judgeErrorMessage("configuration")));
 });
 
 test("a JudgeError logs its kind and not its message", async (t) => {

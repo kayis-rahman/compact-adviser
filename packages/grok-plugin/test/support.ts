@@ -181,6 +181,7 @@ export function runShell(
       ...process.env,
       TYPESAFE_API_KEY: undefined,
       TYPESAFE_BASE: undefined,
+      TYPESAFE_PATH: undefined,
       ...(lab ? { GROK_HOME: lab.home, GROK_SESSION_ID: lab.sessionId } : {}),
       NO_COLOR: "1",
       ...env,
@@ -211,6 +212,8 @@ export function runLauncher(
     env: {
       ...process.env,
       TYPESAFE_API_KEY: undefined,
+      TYPESAFE_BASE: undefined,
+      TYPESAFE_PATH: undefined,
       GROK_HOME: lab.home,
       GROK_SESSION_ID: lab.sessionId,
       NO_COLOR: "1",
@@ -241,6 +244,8 @@ export function runCli(
     env: {
       ...process.env,
       TYPESAFE_API_KEY: undefined,
+      TYPESAFE_BASE: undefined,
+      TYPESAFE_PATH: undefined,
       ...(lab ? { GROK_HOME: lab.home, GROK_SESSION_ID: lab.sessionId } : {}),
       NO_COLOR: "1",
       ...env,
