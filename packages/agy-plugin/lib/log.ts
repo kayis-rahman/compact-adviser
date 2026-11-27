@@ -3,6 +3,7 @@
 // Only the file location is Antigravity's own: one jsonl per session in the adviser's data
 // directory, appended with O_APPEND because each hook run is its own process.
 import { floorFor, JudgeError, type Judgment, qualifies, score } from "./judge.ts";
+import type { JudgeProfile } from "./profile.ts";
 
 export const REQUEST_LOG_PREFIX = "compact-adviser-requests";
 
@@ -17,8 +18,6 @@ export function requestLogPath(dataDir: string, sessionId: string): string {
 }
 
 /** Stable correlation id for a request body. FNV-1a 64, matching the other hosts. */
-import type { JudgeProfile } from "./profile.ts";
-
 export function requestLogId(body: string): string {
   let hash = 0xcbf29ce484222325n;
   for (const byte of new TextEncoder().encode(body)) {

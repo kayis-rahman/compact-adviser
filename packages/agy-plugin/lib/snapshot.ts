@@ -684,7 +684,7 @@ export function snapshot(
       omittedUserMessages: omittedUsers,
       olderMessagesOmitted: Math.max(0, messages.length - RECENT_TAIL_MESSAGES),
       recentTextTruncated: recentTruncated,
-      // chat_history.jsonl carries typed content blocks; transcript.ts reports image blocks.
+      // transcript_full.jsonl carries text content; transcript.ts passes hasImages: false.
       hasImages,
       redacted,
       transcriptLimitReached,
