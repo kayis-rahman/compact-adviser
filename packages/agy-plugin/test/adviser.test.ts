@@ -370,3 +370,42 @@ test("TYPESAFE_BASE and TYPESAFE_PATH=/api/v1/decide adapt the wire format and d
   });
   assert.equal(userMarkdown(shown.stdout), HINT);
 });
+
+test("COMPACT_ADVISER_EVENT_FILE appends one JSON line on a qualifying Stop and stays silent otherwise", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  const eventFile = join(l.dataDir, "events", "compact.jsonl");
+  const stop = await runCli(["hook", "stop"], {
+    lab: l,
+    stdin: stopPayload(l),
+    env: { ...keyed(fixture), COMPACT_ADVISER_EVENT_FILE: eventFile },
+  });
+  assert.equal(stop.code, 0);
+  assert.equal(stop.stdout.trim(), "{}");
+  const lines = readFileSync(eventFile, "utf8").trim().split("\n");
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0] ?? "{}") as {
+    ts: string;
+    harness: string;
+    sessionId: string;
+    cwd: string;
+    verdict: string;
+    reason: string;
+  };
+  assert.equal(event.harness, "agy");
+  assert.equal(event.sessionId, l.conversationId);
+  assert.equal(event.cwd, l.cwd);
+  assert.equal(event.verdict, "compact");
+  assert.match(event.ts, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(event.reason, /Safe compaction boundary/);
+
+  // Non-qualifying checkpoint does not append to the event file.
+  const low = await judgeTurn(t, "low");
+  low.fixture.verdict = { finished: 0.1, handsOn: 0.1 };
+  const lowEventFile = join(l.dataDir, "events", "low.jsonl");
+  await runCli(["hook", "stop"], {
+    lab: low.l,
+    stdin: stopPayload(low.l),
+    env: { ...keyed(low.fixture), COMPACT_ADVISER_EVENT_FILE: lowEventFile },
+  });
+  assert.equal(existsSync(lowEventFile), false);
+});

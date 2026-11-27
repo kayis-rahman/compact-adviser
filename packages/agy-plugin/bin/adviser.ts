@@ -420,6 +420,8 @@ async function runStop(payload: HookPayload): Promise<void> {
     clearVerdict(verdict);
     return;
   }
+  const judgedScore = score(judgment, profile);
+  const judgedFloor = floorFor(fraction, profile);
   saveSessionState(statePath, {
     ...settled,
     lastHintAt: settled.completed,
@@ -431,9 +433,38 @@ async function runStop(payload: HookPayload): Promise<void> {
     promptId,
     at: nowAfter,
     tokens: usage.tokens ?? null,
-    score: score(judgment, profile),
-    floor: floorFor(fraction, profile),
+    score: judgedScore,
+    floor: judgedFloor,
   });
+  emitEvent(env().COMPACT_ADVISER_EVENT_FILE, {
+    ts: new Date(nowAfter).toISOString(),
+    harness: "agy",
+    sessionId,
+    cwd,
+    verdict: "compact",
+    reason: `Safe compaction boundary (score ${judgedScore.toFixed(3)} >= floor ${judgedFloor.toFixed(3)})`,
+  });
+}
+
+function emitEvent(
+  eventFile: string | undefined,
+  event: {
+    ts: string;
+    harness: "agy";
+    sessionId: string;
+    cwd: string;
+    verdict: "compact";
+    reason: string;
+  },
+): void {
+  const target = eventFile?.trim();
+  if (!target) return;
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+    appendFileSync(target, `${JSON.stringify(event)}\n`);
+  } catch {
+    // Event emission is best-effort and must never fail the Stop hook.
+  }
 }
 
 // --- the other hooks ----------------------------------------------------------------
